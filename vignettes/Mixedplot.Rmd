@@ -1,0 +1,172 @@
+---
+title: "Complementary diagnostic plots and predictive plots of linear mixed models from Lme4 "
+author: "Yian Guo, Yuting Yang, Xiaoman Zhai"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+# 1. resid.plot
+
+## Title: 
+resid.plot  
+Plotting pearson residuals for linear mixed effect models with outliers denotation
+
+## Description:  
+This function plots the pearson type residuals against fitted values from a linear mixed effect model fitted by lmer function, with optional denotation of possible outliers.
+
+## Usage:
+resid.plot(object, denote=TRUE)
+
+## Arguments:
+object: a lmer model
+denote: gives the index with top 5% type pearson residuals, default = TRUE
+
+## Example:
+```{r, include=FALSE}
+library(lme4)
+library(lattice)
+library(ggplot2)
+library(tidyr)
+library(HLMdiag)
+
+resid.plot <- function(mod, denote = TRUE) {
+    red <- data.frame(residual = resid(mod, type = "pearson"), fitted = fitted(mod))
+    cut <- quantile(abs(red$residual), prob = 0.975)
+    if (denote == TRUE) {
+        print(ggplot(red, aes(fitted, residual)) + geom_point() + geom_text(aes(label = ifelse(abs(residual) >= 
+            cut, rownames(red), "")), hjust = -0.3, vjust = -0.3, size = 3) + theme_bw() + geom_hline(yintercept = 0, 
+            color = "blue"))
+    } else {
+        print(ggplot(red, aes(fitted, residual)) + geom_point() + theme_bw() + geom_hline(yintercept = 0, 
+            color = "blue"))
+    }
+}
+```
+```{r}
+mod<-lmer(Reaction ~ Days + (Days|Subject), data=sleepstudy)
+resid.plot(mod, denote=TRUE)
+```
+
+# 2. lev.plot
+
+## Title: lev.plot 
+Plotting leverages against pearson residuals for linear mixed effect models  
+
+## Description: 
+This function plots the leverages (calculated by HLMdiag ::leverage) against pearson residuals from a linear mixed effect model fitted by lmer function.
+
+## Usage:
+lev.plot(object, type="overall")
+
+## Arguments:
+object: a lmer model
+type: "overall" plots the overall leverage; "fixef" plots the leverage corresponding to the fixed effects; "ranef" plots the leverage corresponding to the random effects. Default is "overall".
+
+## Example:
+```{r, include=FALSE}
+lev.plot <- function(mod, type = "overall") {
+    lev <- leverage(mod, level = 1)
+    colnames(lev) <- c("overall leverage", "fixed effect leverage", "random effect leverage")
+    if (type == "overall") {
+        ggplot(data.frame(lev = lev[, 1], pearson = residuals(mod, type = "pearson")), aes(x = lev, 
+            y = pearson)) + geom_point() + theme_bw() + ggtitle(colnames(lev)[1])
+    } else if (type == "fixef") {
+        ggplot(data.frame(lev = lev[, 2], pearson = residuals(mod, type = "pearson")), aes(x = lev, 
+            y = pearson)) + geom_point() + theme_bw() + ggtitle(colnames(lev)[2])
+    } else if (type == "ranef") {
+        ggplot(data.frame(lev = lev[, 3], pearson = residuals(mod, type = "pearson")), aes(x = lev, 
+            y = pearson)) + geom_point() + theme_bw() + ggtitle(colnames(lev)[3])
+    }
+}
+```
+```{r}
+mod<-lmer(Reaction ~ Days + (Days|Subject), data=sleepstudy)
+lev.plot(mod, type="fixef")
+```
+
+# 3. cooks.plot
+
+## Title: cooks.plot  
+Plotting cook's distance for linear mixed effect models.
+
+## Description: 
+This function plots the cook's distance (calculated by HLMdiag ::cooks.distance) a linear mixed effect model fitted by lmer function.
+
+## Usage:
+cooks.plot(object, data, cut)
+
+## Arguments:
+object: a lmer model
+data: the dataset used in the object
+cut: cutoff value, unless specified, equals 4/n where n equals the observation number in the dataset.
+
+## Example:
+```{r, include=FALSE}
+cooks.plot <- function(mod, data, cut) {
+    cook <- cooks.distance(mod)
+    cook.df <- data.frame(Index = 1:dim(data)[1], cooks.distance = cook[1:dim(data)[1]])
+    if (missing(cut)) {
+        ggplot(cook.df, aes(Index, cooks.distance)) + geom_point() + geom_text(aes(label = ifelse(cooks.distance >= 
+            4/dim(data)[1], rownames(cook.df), "")), hjust = -0.3, vjust = -0.3, size = 3) + theme_bw() + 
+            geom_hline(yintercept = 4/dim(data)[1], color = "blue")
+    } else {
+        ggplot(cook.df, aes(Index, cooks.distance)) + geom_point() + geom_text(aes(label = ifelse(cooks.distance >= 
+            cut, rownames(cook.df), "")), hjust = -0.3, vjust = -0.3, size = 3) + theme_bw() + geom_hline(yintercept = cut, 
+            color = "blue")
+    }
+}
+```
+```{r}
+mod<-lmer(Reaction ~ Days + (Days|Subject), data=sleepstudy)
+cooks.plot(mod, data=sleepstudy)
+```
+# 4. pred.plot
+
+## Title:
+pred.plot generate prediction and observation plots 
+
+## Description: 
+This function plots predicted values and observed response values against time variable associated with repeated measures from a linear mixed effect model for visual comparison of model fit.
+
+## Usage:
+pred.plot(mod, data, subject, time, response)
+
+# Arguments:
+object: a lmer model
+data: the dataset used in the object
+subject: name of the independent sampling unit (subject, person, ID.)
+time: name of the time variable associated with repeated measures (time, days, visit)
+response: name of the response variable
+
+## Example:
+```{r,include=FALSE}
+pred.plot <- function(mod, data, subject, time, response) {
+    pred <- predict(mod)
+    actual <- data[, response]
+    sub <- data[, subject]
+    tim <- data[, time]
+    dat <- within(data, {
+        Predicted <- pred
+        Observed <- actual
+        Subject <- sub
+        Time <- tim
+    })
+    dat2 <- gather(dat, key = Class, value = Value, Observed, Predicted)
+    ggplot(dat2) + aes(Time, Value, colour = Subject) + geom_line() + facet_wrap(~Class) + theme_bw()
+}
+```
+```{r}
+mod<-lmer(Reaction ~ Days + (Days|Subject), data=sleepstudy)
+pred.plot(mod, sleepstudy, subject="Subject", time="Days", response="Reaction")
+```
+
